@@ -242,7 +242,7 @@
 <li><code>Invalidate</code>并不真正执行，而是被放在一个特殊的队列中，在方便的时候才会去执行。</li>
 <li>处理器不会发送任何消息给所处理的缓存条目，直到它处理<code>Invalidate</code>。</li>
 </ul>
-<p>这里要强调，失效队列仅仅是为了应付这种性能低下的问题，而没有彻底解决它。即便引入了失效队列，CPU还是不知道什么时候该优化，什么时候不该优化。<br>硬件工程师们干脆把这个问题交给了软件工程师，由真正的代码来决定什么时候该优化，什么时候不该优化。这就是大名鼎鼎的<code>内存屏障(Memory Barriers)</code></p>
+<p>这里要强调，失效队列仅仅是为了应付这种性能低下的问题，而没有彻底解决它。即便引入了失效队列，CPU还是不知道什么时候该优化，什么时候不该优化。<br>硬件工程师们干脆把这个问题交给了软件工程师，由代码本身来决定什么时候该优化，什么时候不该优化。这就是大名鼎鼎的<code>内存屏障(Memory Barriers)</code></p>
 <h3 id="内存屏障-Memory-Barriers"><a href="#内存屏障-Memory-Barriers" class="headerlink" title="内存屏障(Memory Barriers)"></a>内存屏障(Memory Barriers)</h3><ul>
 <li><em>Store Memory Barrier(a.k.a. ST, SMB, smp_wmb)</em>指令：告诉处理器在执行这之后的指令之前，应用所有已经在存储缓存（store buffer）中的保存的指令。</li>
 <li><em>Load Memory Barrier (a.k.a. LD, RMB, smp_rmb)</em>指令：告诉处理器在执行任何的加载前，先应用所有已经在失效队列中的失效操作。</li>
@@ -250,7 +250,14 @@
 <p>现在我们来应用一下这两条指令：</p>
 <figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">value = <span class="number">3</span>；</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">exeToCPUA</span><span class="params">()</span></span>&#123;</span><br><span class="line">  value = <span class="number">10</span>;</span><br><span class="line">  <span class="comment">//在更新数据之前必须将所有存储缓存（store buffer）中的指令执行完毕。</span></span><br><span class="line">  storeMemoryBarrier();</span><br><span class="line">  isFinish = <span class="keyword">true</span>;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">exeToCPUB</span><span class="params">()</span></span>&#123;</span><br><span class="line">  <span class="keyword">if</span>(isFinish)&#123;</span><br><span class="line">    <span class="comment">//在读取之前将所有失效队列中关于该数据的指令执行完毕。</span></span><br><span class="line">    loadMemoryBarrier();</span><br><span class="line">    <span class="keyword">assert</span> value == <span class="number">10</span>;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 <p>好了，现在程序就能完美的安全的执行了。</p>
-<h2 id="结束语"><a href="#结束语" class="headerlink" title="结束语"></a>结束语</h2><p>内存屏障对于软件工程师来说，是一个灾难。这种指令是完全耦合硬件平台的。<br>庆幸的是，<code>Java内存模型（Java Memory Model）</code>解决了跨平台的问题。</p>
+<p>内存屏障的设计，给了应用软件一个重要的性能优化工具。同时提出了两个挑战：</p>
+<ol>
+<li>软件设计的复杂度大幅上升</li>
+<li>跨平台的问题</li>
+</ol>
+<p>对于第一个问题，严重依赖软件工程师的经验和能力。—— 所以有经验的程序猿薪资都很高<br>对于第二个问题，作为Java工程师应该很庆幸，举着<code>Write once, run everywhere</code>大旗的Java，设计了整套<code>Java内存模型（Java Memory Model）</code>解决了跨平台问题。</p>
+<h2 id="结束语"><a href="#结束语" class="headerlink" title="结束语"></a>结束语</h2><p>开篇介绍了内存模型的硬件背景：<code>多级CPU高速缓存</code> + <code>多核CPU</code>。在这个硬件背景下，引出了<code>MESI：一致性协议</code>。<br>接着介绍了MESI的<code>状态</code>、<code>迁移事件</code>、<code>迁移过程</code>等基本概念，并在此基础推演了在MESI下的<code>读写协同操作</code>。<br>而为了应对协同操作造成的CPU阻塞问题，引入了<code>Store Bufferes</code>、<code>失效队列</code>等机制。并通过伪代码介绍了<code>重排序（recordings）</code>。<br>这些眼花缭乱的机制和技术，大幅提升了CPU性能。在通用场景下，软件应用不用做太多处理就能获得高性能。<br>然而在一些复杂业务场景下，CPU阻塞的问题依然在。在我看来，这种复杂业务，靠<code>硬件内存模型</code>是不可能解决的。硬件的发展速度再快也只是线性增长，而软件的发展却是指数级在增长。<br><code>内存屏障</code>，是<code>硬件内存模型</code>提供给软件工程师们去解决复杂业务场景下高性能的有力武器。</p>
+<p>对Java而言，高并发编程设计的逻辑原点来源于<code>内存模型</code>。所以内存模型，对我们深入理解Java高并发编程是非常有意义的。</p>
 <h5 id="参考文章"><a href="#参考文章" class="headerlink" title="参考文章"></a>参考文章</h5><p><a href="http://www.importnew.com/10589.html" target="_blank" rel="noopener">深入Java内存模型</a></p>
 <p><script src="https://cdnjs.cloudflare.com/ajax/libs/raphael/2.2.7/raphael.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/flowchart/1.6.5/flowchart.min.js"></script><textarea id="flowchart-0-code" style="display: none">st=>start: 开始
 main=>operation: 程序及数据加载到主内存 
